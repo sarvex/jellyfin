@@ -65,7 +65,7 @@ namespace MediaBrowser.Controller.MediaEncoding
                 return MimeType;
             }
 
-            return MimeTypes.GetMimeType(outputPath, enableStreamDefault);
+            return enableStreamDefault ? MimeTypes.GetMimeType(outputPath) : MimeTypes.GetMimeType(outputPath, null);
         }
 
         private TranscodeReason[] _transcodeReasons = null;
