@@ -489,11 +489,15 @@ namespace Emby.Dlna
                 : ImageFormat.Jpg;
 
             var resource = GetType().Namespace + ".Images." + filename.ToLowerInvariant();
-
-            return new ImageStream
+            var stream = _assembly.GetManifestResourceStream(resource);
+            if (stream == null)
             {
-                Format = format,
-                Stream = _assembly.GetManifestResourceStream(resource)
+                return null;
+            }
+
+            return new ImageStream(stream)
+            {
+                Format = format
             };
         }
 
