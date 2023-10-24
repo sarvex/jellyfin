@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace MediaBrowser.MediaEncoding.Encoder
 {
-    public class EncoderValidator
+    public partial class EncoderValidator
     {
         private static readonly string[] _requiredDecoders = new[]
         {
@@ -52,6 +52,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         {
             "libx264",
             "libx265",
+            "libsvtav1",
             "mpeg4",
             "msmpeg4",
             "libvpx",
@@ -69,12 +70,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
             "srt",
             "h264_amf",
             "hevc_amf",
+            "av1_amf",
             "h264_qsv",
             "hevc_qsv",
+            "av1_qsv",
             "h264_nvenc",
             "hevc_nvenc",
+            "av1_nvenc",
             "h264_vaapi",
             "hevc_vaapi",
+            "av1_vaapi",
             "h264_v4l2m2m",
             "h264_videotoolbox",
             "hevc_videotoolbox"
@@ -159,6 +164,12 @@ namespace MediaBrowser.MediaEncoding.Encoder
         public static Version MinVersion { get; } = new Version(4, 0);
 
         public static Version? MaxVersion { get; } = null;
+
+        [GeneratedRegex(@"^ffmpeg version n?((?:[0-9]+\.?)+)")]
+        private static partial Regex FfmpegVersionRegex();
+
+        [GeneratedRegex(@"((?<name>lib\w+)\s+(?<major>[0-9]+)\.\s*(?<minor>[0-9]+))", RegexOptions.Multiline)]
+        private static partial Regex LibraryRegex();
 
         public bool ValidateVersion()
         {
@@ -278,7 +289,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         internal Version? GetFFmpegVersionInternal(string output)
         {
             // For pre-built binaries the FFmpeg version should be mentioned at the very start of the output
-            var match = Regex.Match(output, @"^ffmpeg version n?((?:[0-9]+\.?)+)");
+            var match = FfmpegVersionRegex().Match(output);
 
             if (match.Success)
             {
@@ -326,10 +337,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         {
             var map = new Dictionary<string, Version>();
 
-            foreach (Match match in Regex.Matches(
-                output,
-                @"((?<name>lib\w+)\s+(?<major>[0-9]+)\.\s*(?<minor>[0-9]+))",
-                RegexOptions.Multiline))
+            foreach (Match match in LibraryRegex().Matches(output))
             {
                 var version = new Version(
                     int.Parse(match.Groups["major"].ValueSpan, CultureInfo.InvariantCulture),
@@ -491,8 +499,8 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             var required = codec == Codec.Encoder ? _requiredEncoders : _requiredDecoders;
 
-            var found = Regex
-                .Matches(output, @"^\s\S{6}\s(?<codec>[\w|-]+)\s+.+$", RegexOptions.Multiline)
+            var found = CodecRegex()
+                .Matches(output)
                 .Select(x => x.Groups["codec"].Value)
                 .Where(x => required.Contains(x));
 
@@ -519,8 +527,8 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 return Enumerable.Empty<string>();
             }
 
-            var found = Regex
-                .Matches(output, @"^\s\S{3}\s(?<filter>[\w|-]+)\s+.+$", RegexOptions.Multiline)
+            var found = FilterRegex()
+                .Matches(output)
                 .Select(x => x.Groups["filter"].Value)
                 .Where(x => _requiredFilters.Contains(x));
 
@@ -545,7 +553,8 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
         private string GetProcessOutput(string path, string arguments, bool readStdErr, string? testKey)
         {
-            using (var process = new Process()
+            var redirectStandardIn = !string.IsNullOrEmpty(testKey);
+            using (var process = new Process
             {
                 StartInfo = new ProcessStartInfo(path, arguments)
                 {
@@ -553,7 +562,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
                     UseShellExecute = false,
                     WindowStyle = ProcessWindowStyle.Hidden,
                     ErrorDialog = false,
-                    RedirectStandardInput = !string.IsNullOrEmpty(testKey),
+                    RedirectStandardInput = redirectStandardIn,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 }
@@ -563,13 +572,21 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
                 process.Start();
 
-                if (!string.IsNullOrEmpty(testKey))
+                if (redirectStandardIn)
                 {
-                    process.StandardInput.Write(testKey);
+                    using var writer = process.StandardInput;
+                    writer.Write(testKey);
                 }
 
-                return readStdErr ? process.StandardError.ReadToEnd() : process.StandardOutput.ReadToEnd();
+                using var reader = readStdErr ? process.StandardError : process.StandardOutput;
+                return reader.ReadToEnd();
             }
         }
+
+        [GeneratedRegex("^\\s\\S{6}\\s(?<codec>[\\w|-]+)\\s+.+$", RegexOptions.Multiline)]
+        private static partial Regex CodecRegex();
+
+        [GeneratedRegex("^\\s\\S{3}\\s(?<filter>[\\w|-]+)\\s+.+$", RegexOptions.Multiline)]
+        private static partial Regex FilterRegex();
     }
 }

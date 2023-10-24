@@ -294,8 +294,8 @@ public class LibraryController : BaseJellyfinApiController
 
         return new AllThemeMediaResult
         {
-            ThemeSongsResult = themeSongs?.Value,
-            ThemeVideosResult = themeVideos?.Value,
+            ThemeSongsResult = themeSongs.Value,
+            ThemeVideosResult = themeVideos.Value,
             SoundtrackSongsResult = new ThemeMediaResult()
         };
     }
@@ -490,7 +490,7 @@ public class LibraryController : BaseJellyfinApiController
 
             baseItemDtos.Add(_dtoService.GetBaseItemDto(parent, dtoOptions, user));
 
-            parent = parent?.GetParent();
+            parent = parent.GetParent();
         }
 
         return baseItemDtos;
@@ -969,12 +969,8 @@ public class LibraryController : BaseJellyfinApiController
                    || string.Equals(name, "MusicBrainz", StringComparison.OrdinalIgnoreCase);
         }
 
-        var metadataOptions = _serverConfigurationManager.Configuration.MetadataOptions
-            .Where(i => string.Equals(i.ItemType, type, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        return metadataOptions.Length == 0
-               || metadataOptions.Any(i => !i.DisabledMetadataFetchers.Contains(name, StringComparison.OrdinalIgnoreCase));
+        var metadataOptions = _serverConfigurationManager.GetMetadataOptionsForType(type);
+        return metadataOptions is null || !metadataOptions.DisabledMetadataFetchers.Contains(name, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsImageFetcherEnabledByDefault(string name, string type, bool isNewLibrary)
@@ -995,15 +991,7 @@ public class LibraryController : BaseJellyfinApiController
                    || string.Equals(name, "Image Extractor", StringComparison.OrdinalIgnoreCase);
         }
 
-        var metadataOptions = _serverConfigurationManager.Configuration.MetadataOptions
-            .Where(i => string.Equals(i.ItemType, type, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        if (metadataOptions.Length == 0)
-        {
-            return true;
-        }
-
-        return metadataOptions.Any(i => !i.DisabledImageFetchers.Contains(name, StringComparison.OrdinalIgnoreCase));
+        var metadataOptions = _serverConfigurationManager.GetMetadataOptionsForType(type);
+        return metadataOptions is null || !metadataOptions.DisabledImageFetchers.Contains(name, StringComparison.OrdinalIgnoreCase);
     }
 }

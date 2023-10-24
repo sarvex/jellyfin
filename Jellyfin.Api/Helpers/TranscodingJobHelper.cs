@@ -538,7 +538,7 @@ public class TranscodingJobHelper : IDisposable
                 await _attachmentExtractor.ExtractAllAttachments(state.MediaPath, state.MediaSource, attachmentPath, cancellationTokenSource.Token).ConfigureAwait(false);
             }
 
-            if (state.SubtitleStream.IsExternal && string.Equals(Path.GetExtension(state.SubtitleStream.Path), ".mks", StringComparison.OrdinalIgnoreCase))
+            if (state.SubtitleStream.IsExternal && Path.GetExtension(state.SubtitleStream.Path.AsSpan()).Equals(".mks", StringComparison.OrdinalIgnoreCase))
             {
                 string subtitlePath = state.SubtitleStream.Path;
                 string subtitlePathArgument = string.Format(CultureInfo.InvariantCulture, "file:\"{0}\"", subtitlePath.Replace("\"", "\\\"", StringComparison.Ordinal));
@@ -620,7 +620,7 @@ public class TranscodingJobHelper : IDisposable
         state.TranscodingJob = transcodingJob;
 
         // Important - don't await the log task or we won't be able to kill FFmpeg when the user stops playback
-        _ = new JobLogger(_logger).StartStreamingLog(state, process.StandardError.BaseStream, logStream);
+        _ = new JobLogger(_logger).StartStreamingLog(state, process.StandardError, logStream);
 
         // Wait for the file to exist before proceeding
         var ffmpegTargetFile = state.WaitForPath ?? outputPath;
@@ -660,7 +660,7 @@ public class TranscodingJobHelper : IDisposable
     {
         if (EnableThrottling(state))
         {
-            transcodingJob.TranscodingThrottler = new TranscodingThrottler(transcodingJob, new Logger<TranscodingThrottler>(new LoggerFactory()), _serverConfigurationManager, _fileSystem, _mediaEncoder);
+            transcodingJob.TranscodingThrottler = new TranscodingThrottler(transcodingJob, _loggerFactory.CreateLogger<TranscodingThrottler>(), _serverConfigurationManager, _fileSystem, _mediaEncoder);
             transcodingJob.TranscodingThrottler.Start();
         }
     }

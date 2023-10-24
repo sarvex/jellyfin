@@ -31,6 +31,9 @@ namespace Emby.Dlna.PlayTo
             _httpClientFactory = httpClientFactory;
         }
 
+        [GeneratedRegex("(&(?![a-z]*;))")]
+        private static partial Regex EscapeAmpersandRegex();
+
         private static string NormalizeServiceUrl(string baseUrl, string serviceUrl)
         {
             // If it's already a complete url, don't stick anything onto the front of it
@@ -49,39 +52,45 @@ namespace Emby.Dlna.PlayTo
 
         private async Task<XDocument?> SendRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            using var response = await _httpClientFactory.CreateClient(NamedClient.Dlna).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var client = _httpClientFactory.CreateClient(NamedClient.Dlna);
+            using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            try
+            Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using (stream.ConfigureAwait(false))
             {
-                return await XDocument.LoadAsync(
-                    stream,
-                    LoadOptions.None,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (XmlException)
-            {
-                // try correcting the Xml response with common errors
-                var xmlString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-                // find and replace unescaped ampersands (&)
-                xmlString = EscapeAmpersandRegex().Replace(xmlString, "&amp;");
-
                 try
                 {
-                    // retry reading Xml
-                    var xmlReader = new StringReader(xmlString);
                     return await XDocument.LoadAsync(
-                        xmlReader,
+                        stream,
                         LoadOptions.None,
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch (XmlException ex)
+                catch (XmlException)
                 {
-                    _logger.LogError(ex, "Failed to parse response");
-                    _logger.LogDebug("Malformed response: {Content}\n", xmlString);
+                    // try correcting the Xml response with common errors
+                    stream.Position = 0;
+                    using StreamReader sr = new StreamReader(stream);
+                    var xmlString = await sr.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
-                    return null;
+                    // find and replace unescaped ampersands (&)
+                    xmlString = EscapeAmpersandRegex().Replace(xmlString, "&amp;");
+
+                    try
+                    {
+                        // retry reading Xml
+                        using var xmlReader = new StringReader(xmlString);
+                        return await XDocument.LoadAsync(
+                            xmlReader,
+                            LoadOptions.None,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (XmlException ex)
+                    {
+                        _logger.LogError(ex, "Failed to parse response");
+                        _logger.LogDebug("Malformed response: {Content}\n", xmlString);
+
+                        return null;
+                    }
                 }
             }
         }
@@ -124,12 +133,5 @@ namespace Emby.Dlna.PlayTo
             // Have to await here instead of returning the Task directly, otherwise request would be disposed too soon
             return await SendRequestAsync(request, cancellationToken).ConfigureAwait(false);
         }
-
-        /// <summary>
-        /// Compile-time generated regular expression for escaping ampersands.
-        /// </summary>
-        /// <returns>Compiled regular expression.</returns>
-        [GeneratedRegex("(&(?![a-z]*;))")]
-        private static partial Regex EscapeAmpersandRegex();
     }
 }
